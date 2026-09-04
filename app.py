@@ -1,7 +1,7 @@
 import os, csv, requests, datetime
 from flask import Flask, request, jsonify
 app = Flask(__name__)
-TOKEN = "8826977337:AAF,......"
+TOKEN = "YOUR_BOT_TOKEN_HERE"
 CHAT_ID = "720....."
 LOG_FILE = "machine_logs.csv"
 
