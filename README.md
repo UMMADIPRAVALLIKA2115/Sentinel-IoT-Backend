@@ -40,5 +40,5 @@ Sentinel-IoT is a Python-based backend architecture designed for **Industry 4.0*
 
 1. **Clone the Repository**
    ```bash
-   git clone https://github.com/YOUR_USERNAME/Sentinel-IoT.git
+   git clone https://github.com/ummadipravallika/Sentinel-IoT.git
    cd Sentinel-IoT
