@@ -6,7 +6,7 @@ Sentinel-IoT is a **Full-Stack Industry 4.0 solution** designed for real-time ma
 
 ## 📊 Live Dashboard Preview
 *(Recruiter Tip: See the real-time line chart and mobile alerts in action below)*
-![Dashboard Preview](https://github.com/UMMADIPRAVALLIKA2115/Sentinel-IoT-Backend/blob/main/media/dashboard_demo.png?raw=true)
+![Dashboard Preview]https://github.com/UMMADIPRAVALLIKA2115/Sentinel-IoT-Backend/blob/main/dashboard.html%20-%20Sentinel-IoT-Backend-main%20-%20Visual%20Studio%20Code%202026-09-05%2011-41-40.mp4
 > **Note:** For a live video demonstration of the alerting system, visit my [LinkedIn Profile](https://linkedin.com/in/ummadipravallika/).
 
 ---
