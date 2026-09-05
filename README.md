@@ -1,43 +1,44 @@
 # Sentinel-IoT: Industrial Machine Health Monitoring & Visualization 🚀🏭
 
-Sentinel-IoT is a **Full-Stack Industry 4.0 solution** designed for real-time machine health monitoring. It bridges the gap between hardware telemetry and human-readable intelligence by combining a high-performance Python backend with a live data visualization dashboard.
+Sentinel-IoT is a **Full-Stack Industry 4.0 solution** designed for real-time machine health monitoring. By bridging the gap between raw hardware telemetry and actionable human intelligence, this system provides a live dashboard for data visualization and an automated cloud-alerting layer for emergency response.
 
 ---
 
 ## 📊 Live Dashboard Preview
-*(Tip: Take a screenshot of your moving line graph and upload it to your GitHub 'media' folder, then replace the link below!)*
-![Dashboard Preview](https://via.placeholder.com/800x400.png?text=Show+Your+Moving+Line+Chart+Here)
+*(Recruiter Tip: See the real-time line chart and mobile alerts in action below)*
+![Dashboard Preview](https://github.com/UMMADIPRAVALLIKA2115/Sentinel-IoT-Backend/blob/main/media/dashboard_demo.png?raw=true)
+> **Note:** For a live video demonstration of the alerting system, visit my [LinkedIn Profile](https://linkedin.com/in/ummadipravallika/).
 
 ---
 
-## 🛠 Features (Updated v2.0)
-- **Real-Time Data Ingestion:** A Flask-based REST API designed to handle high-frequency JSON payloads from IoT edge devices.
-- **Dynamic Web Dashboard:** Integrated **Chart.js** and **Jinja2** to build an auto-updating frontend that visualizes machine temperature trends every 2 seconds.
-- **Intelligence & Anomaly Detection:** Server-side logic that categorizes machine states:
-  - 🟢 **Normal:** Stable operation.
-  - 🟡 **Warning:** Rising temperature trends.
-  - 🔴 **Emergency:** Critical overheating (>85°C) triggering instant cloud alerts.
-- **Instant Notification Layer:** Fully integrated with the **Telegram Bot API** for mobile emergency alerting.
-- **Data Persistence:** Automated CSV logging for historical machine health audits.
+## 🛠 Features (v2.0)
+- **Real-Time Data Ingestion:** Built a robust Flask-based REST API to handle high-frequency JSON payloads from IoT edge devices.
+- **Dynamic Visualization:** Integrated **Chart.js** to build an auto-updating frontend dashboard that visualizes temperature trends every 2 seconds.
+- **Three-Stage Monitoring Logic:**
+  - 🟢 **Normal:** Systems stable (<70°C).
+  - 🟡 **Warning:** High-temperature detected (70°C - 85°C) with system logging.
+  - 🔴 **Emergency:** Critical overheating (>85°C) triggers instant **Telegram Bot API** push notifications.
+- **Data Persistence:** Automated CSV logging to maintain a historical audit trail for predictive maintenance analysis.
+- **Security-First Design:** Implemented environment variables (`.env`) and `.gitignore` protocols to protect sensitive API credentials.
 
 ---
 
 ## 💻 Tech Stack
-- **Backend:** Python 3.x, Flask (Micro-framework)
+- **Backend:** Python 3.x, Flask
 - **Frontend:** HTML5, Bootstrap 5, Chart.js (Data Viz)
 - **API/Communication:** REST APIs, Telegram Bot API, JSON
-- **Environment:** Dotenv (Security), Requests, IoT Simulator
+- **Tools:** VS Code, Git, Industrial Machine Simulator, Dotenv
 
 ---
 
 ## 📂 Project Structure
 ```text
 Sentinel-IoT/
-├── app.py                  # Flask Backend (The Brain)
-├── device_simulator.py      # IoT Machine Simulator (The Source)
+├── app.py                  # Central Flask Backend (The Brain)
+├── device_simulator.py      # IoT Machine Simulator (Data Source)
 ├── .env                    # Secret API Credentials (HIDDEN)
-├── .gitignore              # Protects secrets from being public
-├── requirements.txt        # Project Dependencies
-├── templates/              # Frontend Folder
-│   └── dashboard.html      # Real-time Visualization UI
-└── machine_logs.csv        # Historical Data Storage
+├── .gitignore              # Ensures security by hiding secrets
+├── requirements.txt        # Project Dependencies for easy setup
+├── templates/              # UI Folder
+│   └── dashboard.html      # Real-time Visualization Dashboard
+└── machine_logs.csv        # Historical Health Data
