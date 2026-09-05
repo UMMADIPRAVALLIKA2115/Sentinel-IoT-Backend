@@ -1,8 +1,8 @@
 import os, csv, requests, datetime
 from flask import Flask, request, jsonify
 app = Flask(__name__)
-TOKEN = "YOUR_BOT_TOKEN_HERE"
-CHAT_ID = "720....."
+TOKEN = os.getenv("TELEGRAM_TOKEN", "YOUR_BOT_TOKEN_HERE")
+CHAT_ID = os.getenv("TELEGRAM_CHAT_ID", "YOUR_CHAT_ID_HERE")
 LOG_FILE = "machine_logs.csv"
 
 # Function to save data to a CSV file (Excel)
