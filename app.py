@@ -31,7 +31,7 @@ with app.app_context():
     db.create_all()
 
 # --- 3. TELEGRAM CONFIG (Pulls from Render Environment Variables) ---
-TOKEN = os.environ.get("8919728098:AAFC2Ojn0_wrjXtP5UqozLCYb5d4jkUwF9c")
+TOKEN = os.environ.get("8919728098:AAH9NGu_iOTYYJCVig_wsZb7tDR5RHdpBqE")
 CHAT_ID = os.environ.get("7201797239")
 
 def send_telegram_msg(text):
