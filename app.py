@@ -9,11 +9,9 @@ from fpdf import FPDF
 app = Flask(__name__)
 
 # --- 1. CLOUD SECURITY CONFIG ---
-# This pulls the secret key from Render; if not found, it uses a backup
-app.secret_key = os.environ.get('SECRET_KEY', 'sentinel_production_ultra_99')
+app.secret_key = os.environ.get('SECRET_KEY', 'sentinel_ultra_secure_99')
 
 # --- 2. CLOUD DATABASE CONFIG ---
-# Ensures the database file path is handled correctly by the Linux server
 basedir = os.path.abspath(os.path.dirname(__file__))
 app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///' + os.path.join(basedir, 'sentinel_ultra.db')
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
@@ -30,14 +28,18 @@ class MachineLog(db.Model):
 with app.app_context():
     db.create_all()
 
-# --- 3. TELEGRAM CONFIG (Pulls from Render Environment Variables) ---
+# --- 3. TELEGRAM CONFIG (Pulls from Render Dashboard) ---
+# IMPORTANT: These must be typed in the Render "Environment" tab!
 TOKEN = os.environ.get("8919728098:AAH9NGu_iOTYYJCVig_wsZb7tDR5RHdpBqE")
 CHAT_ID = os.environ.get("7201797239")
+
+# Global variable to store OTP temporarily (Cloud-safe method)
+PENDING_OTP = {}
 
 def send_telegram_msg(text):
     """Sends messages and logs results for cloud debugging"""
     if not TOKEN or not CHAT_ID:
-        print("❌ CLOUD ERROR: Environment Variables TELEGRAM_TOKEN or CHAT_ID are missing!")
+        print(f"❌ CLOUD ERROR: Environment Variables missing! TOKEN:{bool(TOKEN)} ID:{bool(CHAT_ID)}")
         return False
     
     url = f"https://api.telegram.org/bot{TOKEN}/sendMessage"
@@ -51,7 +53,7 @@ def send_telegram_msg(text):
         print(f"❌ Connection Error: {str(e)}")
         return False
 
-# --- 4. AUTHENTICATION ROUTES ---
+# --- 4. AUTHENTICATION & 2FA ROUTES ---
 
 @app.route('/login', methods=['GET', 'POST'])
 def login():
@@ -61,7 +63,7 @@ def login():
         
         if user == "Pravallika" and pw == "Princy@2115":
             otp = str(random.randint(100000, 999999))
-            session['pending_otp'] = otp # Store OTP in secure session
+            PENDING_OTP['current'] = otp # Save to global storage
             
             # Send the OTP
             success = send_telegram_msg(f"🔐 SENTINEL CLOUD ACCESS\nYour Secure Code: {otp}")
@@ -81,19 +83,19 @@ def verify_page():
 @app.route('/verify_logic', methods=['POST'])
 def verify_logic():
     user_otp = request.form.get('otp')
-    if user_otp == session.get('pending_otp'):
+    if user_otp == PENDING_OTP.get('current'):
         session['logged_in'] = True
-        session.pop('pending_otp', None)
+        PENDING_OTP.pop('current', None)
         return redirect(url_for('index'))
     return "Invalid OTP. Access Denied.", 401
 
 @app.route('/test_bot')
 def test_bot():
-    """Safety route to verify Telegram is connected to Render"""
-    result = send_telegram_msg("🚀 Sentinel Cloud System is Online and Connected!")
+    """Diagnostic route to verify keys work from the browser"""
+    result = send_telegram_msg("🚀 Sentinel Cloud Link Successful!")
     return f"Test Sent! Status: {'Success' if result else 'Failed'}. Check Render logs for details."
 
-# --- 5. DATA & DASHBOARD ROUTES ---
+# --- 5. DASHBOARD & DATA ROUTES ---
 
 @app.route('/')
 def index():
@@ -102,11 +104,13 @@ def index():
 
 @app.route('/get_machines')
 def get_machines():
+    if not session.get('logged_in'): return jsonify([]), 401
     machines = db.session.query(MachineLog.machine_id).distinct().all()
     return jsonify([m[0] for m in machines])
 
 @app.route('/get_data/<m_id>')
 def get_data(m_id):
+    if not session.get('logged_in'): return jsonify([]), 401
     logs = MachineLog.query.filter_by(machine_id=m_id).order_by(MachineLog.id.desc()).limit(20).all()
     return jsonify([{"time": l.timestamp.strftime("%H:%M:%S"), "temp": l.temperature, "vib": l.vibration, "status": l.status} for l in reversed(logs)])
 
@@ -127,13 +131,13 @@ def export_report(m_id):
     pdf = FPDF()
     pdf.add_page()
     pdf.set_font("Arial", 'B', 16)
-    pdf.cell(190, 10, f"INDUSTRIAL AUDIT: {m_id}", 1, 1, 'C')
+    pdf.cell(190, 10, f"ULTIMATE AUDIT: {m_id}", 1, 1, 'C')
     pdf.ln(10)
     pdf.set_font("Arial", size=10)
     for log in logs:
         pdf.cell(190, 8, f"{log.timestamp} | {log.temperature}C | {log.vibration}G | {log.status}", 0, 1)
     
-    path = f"/tmp/{m_id}_report.pdf" # Use /tmp for cloud file writing
+    path = f"/tmp/{m_id}_report.pdf" 
     pdf.output(path)
     return send_file(path, as_attachment=True)
 
@@ -143,4 +147,6 @@ def logout():
     return redirect(url_for('login'))
 
 if __name__ == '__main__':
-    app.run()
+    # Default port for local, Render will use its own
+    port = int(os.environ.get("PORT", 5000))
+    app.run(host='0.0.0.0', port=port)
