@@ -26,7 +26,7 @@ with app.app_context():
     db.create_all()
 
 # --- 2. CONFIG FROM RENDER DASHBOARD ---
-TOKEN = os.environ.get(" 8919728098:AAFC2Ojn0_wrjXtP5UqozLCYb5d4jkUwF9c")
+TOKEN = os.environ.get("8919728098:AAFC2Ojn0_wrjXtP5UqozLCYb5d4jkUwF9c")
 CHAT_ID = os.environ.get("7201797239")
 
 # --- 3. AUTHENTICATION ---
