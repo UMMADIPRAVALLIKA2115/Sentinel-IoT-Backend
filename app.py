@@ -1,14 +1,24 @@
-import os, requests, datetime
+import os, requests, datetime, random
 from flask import Flask, request, jsonify, render_template, redirect, url_for, session, send_file
 from flask_sqlalchemy import SQLAlchemy
+from fpdf import FPDF
+from flasgger import Swagger 
 
+# --- 1. SETUP & PATHS ---
 basedir = os.path.abspath(os.path.dirname(__file__))
 
-app = Flask(__name__)
-app.secret_key = os.environ.get('SECRET_KEY', 'sentinel_ultimate_2026')
+app = Flask(__name__, 
+            template_folder='templates',
+            static_folder='static')
 
-# --- DB CONFIG (Fixed for Render) ---
-app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///' + os.path.join(basedir, 'sentinel_ultimate.db')
+# Use Environment Variable for Secret Key or a default
+app.secret_key = os.environ.get('SECRET_KEY', 'sentinel_ultimate_2026')
+swagger = Swagger(app) 
+
+# --- 2. DB CONFIG ---
+# Absolute path ensures the database works on Render's Linux environment
+db_path = os.path.join(basedir, 'sentinel_ultimate.db')
+app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///' + db_path
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
 db = SQLAlchemy(app)
 
@@ -16,14 +26,14 @@ class MachineLog(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     machine_id = db.Column(db.String(50))
     temperature = db.Column(db.Float)
-    vibration = db.Column(db.Float)
+    vibration = db.Column(db.Float) 
     status = db.Column(db.String(20))
     timestamp = db.Column(db.DateTime, default=datetime.datetime.now)
 
 with app.app_context():
     db.create_all()
 
-# --- TELEGRAM CONFIG ---
+# --- 3. CONFIG ---
 TOKEN = "8826977337:AAHrPFnMEK-APFSOLJL9AeRDNXTlgM1FWbQ"
 CHAT_ID = "7201797239"
 CURRENT_OTP = "123456"
@@ -36,17 +46,21 @@ def send_otp_telegram(otp):
     except Exception as e:
         print(f"Telegram Error: {e}")
 
-# --- ROUTES ---
+# --- 4. ROUTES ---
+
 @app.route('/login', methods=['GET', 'POST'])
 def login():
     if request.method == 'POST':
-        if request.form.get('username') == "Pravallika" and request.form.get('password') == "Princy_@2115":
-            send_otp_telegram(CURRENT_OTP) # This triggers the OTP
+        u = request.form.get('username')
+        p = request.form.get('password')
+        if u == "Pravallika" and p == "Princy_@2115":
+            send_otp_telegram(CURRENT_OTP)
             return redirect(url_for('verify_page'))
     return render_template('login.html')
 
 @app.route('/verify')
-def verify_page(): return render_template('verify_otp.html')
+def verify_page(): 
+    return render_template('verify_otp.html')
 
 @app.route('/verify_logic', methods=['POST'])
 def verify_logic():
@@ -57,7 +71,8 @@ def verify_logic():
 
 @app.route('/')
 def index():
-    if not session.get('logged_in'): return redirect(url_for('login'))
+    if not session.get('logged_in'): 
+        return redirect(url_for('login'))
     return render_template('dashboard.html')
 
 @app.route('/get_machines')
@@ -73,15 +88,39 @@ def get_data(m_id):
 @app.route('/ingest', methods=['POST'])
 def ingest():
     data = request.json
+    if not data: return jsonify({"error": "No data"}), 400
     m_id, temp, vib = data.get("machine_id"), data.get("temperature"), data.get("vibration", 0.5)
+    
     mode = "NORMAL"
     if temp > 85 or vib > 0.9: mode = "EMERGENCY"
     elif temp > 75 or vib > 0.7: mode = "WARNING"
+    
     new_entry = MachineLog(machine_id=m_id, temperature=temp, vibration=vib, status=mode)
     db.session.add(new_entry)
     db.session.commit()
     return jsonify({"status": "ok"}), 201
 
+@app.route('/export_report/<m_id>')
+def export_report(m_id):
+    logs = MachineLog.query.filter_by(machine_id=m_id).order_by(MachineLog.id.desc()).limit(50).all()
+    pdf = FPDF()
+    pdf.add_page()
+    pdf.set_font("Arial", 'B', 16)
+    pdf.cell(190, 10, f"ULTIMATE AUDIT: {m_id}", 1, 1, 'C')
+    pdf.ln(10)
+    pdf.set_font("Arial", size=10)
+    pdf.cell(50, 10, "Timestamp", 1); pdf.cell(40, 10, "Temp (C)", 1); pdf.cell(40, 10, "Vib (G)", 1); pdf.cell(40, 10, "Status", 1); pdf.ln()
+    for log in logs:
+        pdf.cell(50, 10, str(log.timestamp), 1)
+        pdf.cell(40, 10, str(log.temperature), 1)
+        pdf.cell(40, 10, str(log.vibration), 1)
+        pdf.cell(40, 10, log.status, 1); pdf.ln()
+    
+    path = os.path.join(basedir, "audit_report.pdf")
+    pdf.output(path)
+    return send_file(path, as_attachment=True)
+
+# --- 5. RENDER CONFIG ---
 if __name__ == '__main__':
     port = int(os.environ.get('PORT', 5000))
     app.run(host='0.0.0.0', port=port)
