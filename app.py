@@ -1,6 +1,12 @@
 import os, requests, datetime, random
 from flask import Flask, request, jsonify, render_template, redirect, url_for, session, send_file
 from flask_sqlalchemy import SQLAlchemy
+from flasgger import Swagger # 1. Make sure this import is here
+
+app = Flask(__name__)
+app.secret_key = 'sentinel_ultimate_2026'
+
+swagger = Swagger(app) # 2. Make sure this line is here!
 
 basedir = os.path.abspath(os.path.dirname(__file__))
 app = Flask(__name__)
