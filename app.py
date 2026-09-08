@@ -59,7 +59,7 @@ def login():
         
         # A. RECRUITER ACCESS: Direct Entry (No OTP)
         # This makes it easy for hiring managers in Hyderabad to see your work
-        if user == "pravallika" and pw == "Princy@2115":
+        if user == "pravallika" and pw == "UMMADI":
             session['logged_in'] = True
             return redirect(url_for('index'))
             
