@@ -1,7 +1,7 @@
 import requests, time, random
 
 # CHANGE THIS TO YOUR RENDER URL
-URL = "https://sentinel-iot-backend-5.onrender.com/ingest"
+URL = "https://sentinel-iot-backend-12.onrender.com/ingest"
 machines = ["CNC-HYD-001", "LATHE-HYD-002", "DRILL-HYD-003"]
 
 print("🚀 Sentinel IoT Simulator Started...")
