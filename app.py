@@ -4,13 +4,12 @@ from flask_sqlalchemy import SQLAlchemy
 from fpdf import FPDF
 
 app = Flask(__name__)
-# Use a default secret key if the environment variable isn't set
-app.secret_key = os.environ.get('SECRET_KEY', 'sentinel_production_key_2026')
+# Secure secret key for Cloud Sessions
+app.secret_key = os.environ.get('SECRET_KEY', 'sentinel_prod_789')
 
 # --- 1. CLOUD DB CONFIG ---
-# This ensures the database is created in the correct folder on Render
 basedir = os.path.abspath(os.path.dirname(__file__))
-app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///' + os.path.join(basedir, 'sentinel_cloud.db')
+app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///' + os.path.join(basedir, 'sentinel_prod.db')
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
 db = SQLAlchemy(app)
 
@@ -22,25 +21,47 @@ class MachineLog(db.Model):
     status = db.Column(db.String(20))
     timestamp = db.Column(db.DateTime, default=datetime.datetime.now)
 
-# --- 2. CONFIG FROM RENDER ENVIRONMENT ---
-TOKEN = os.environ.get("8919728098:AAH71DEsykt2KhzQe_nkZD8z8lKxwqMAMcA")
+# Initialize DB on start
+with app.app_context():
+    db.create_all()
+
+# --- 2. CONFIG FROM RENDER DASHBOARD ---
+TOKEN = os.environ.get(" 8919728098:AAH71DEsykt2KhzQe_nkZD8z8lKxwqMAMcA")
 CHAT_ID = os.environ.get("7201797239")
 
-# --- 3. ROUTES ---
-
+# --- 3. AUTHENTICATION ---
 @app.route('/login', methods=['GET', 'POST'])
 def login():
     if request.method == 'POST':
-        if request.form.get('username') == "Pravallika" and request.form.get('password') == "Princy@2115":
-            session['logged_in'] = True
-            return redirect(url_for('index'))
+        user = request.form.get('username')
+        pw = request.form.get('password')
+        if user == "Pravallika" and pw == "Princy@2115":
+            # Generate OTP and store in SESSION (Cloud Safe)
+            otp = str(random.randint(100000, 999999))
+            session['pending_otp'] = otp
+            
+            # Send OTP
+            url = f"https://api.telegram.org/bot{TOKEN}/sendMessage"
+            requests.post(url, json={"chat_id": CHAT_ID, "text": f"🔐 CLOUD ACCESS CODE: {otp}"})
+            return redirect(url_for('verify_page'))
     return render_template('login.html')
+
+@app.route('/verify')
+def verify_page(): return render_template('verify_otp.html')
+
+@app.route('/verify_logic', methods=['POST'])
+def verify_logic():
+    if request.form.get('otp') == session.get('pending_otp'):
+        session['logged_in'] = True
+        return redirect(url_for('index'))
+    return "Invalid OTP", 401
 
 @app.route('/')
 def index():
     if not session.get('logged_in'): return redirect(url_for('login'))
     return render_template('dashboard.html')
 
+# --- 4. DATA ROUTES ---
 @app.route('/get_machines')
 def get_machines():
     machines = db.session.query(MachineLog.machine_id).distinct().all()
@@ -55,13 +76,27 @@ def get_data(m_id):
 def ingest():
     data = request.json
     m_id, temp, vib = data.get("machine_id"), data.get("temperature"), data.get("vibration", 0.5)
+    
+    # Simple Anomaly Logic
     mode = "EMERGENCY" if temp > 85 or vib > 0.9 else ("WARNING" if temp > 75 or vib > 0.7 else "NORMAL")
     
-    with app.app_context():
-        new_entry = MachineLog(machine_id=m_id, temperature=temp, vibration=vib, status=mode)
-        db.session.add(new_entry)
-        db.session.commit()
+    new_entry = MachineLog(machine_id=m_id, temperature=temp, vibration=vib, status=mode)
+    db.session.add(new_entry)
+    db.session.commit()
     return jsonify({"status": "ok"}), 201
+
+@app.route('/export_report/<m_id>')
+def export_report(m_id):
+    logs = MachineLog.query.filter_by(machine_id=m_id).limit(50).all()
+    pdf = FPDF()
+    pdf.add_page()
+    pdf.set_font("Arial", 'B', 16)
+    pdf.cell(190, 10, f"CLOUD AUDIT REPORT: {m_id}", 1, 1, 'C')
+    pdf.ln(10)
+    for l in logs:
+        pdf.cell(190, 8, f"{l.timestamp} | {l.temperature}C | {l.vibration}G | {l.status}", 0, 1)
+    pdf.output("report.pdf")
+    return send_file("report.pdf", as_attachment=True)
 
 @app.route('/logout')
 def logout():
@@ -69,6 +104,4 @@ def logout():
     return redirect(url_for('login'))
 
 if __name__ == '__main__':
-    with app.app_context():
-        db.create_all()
     app.run()
