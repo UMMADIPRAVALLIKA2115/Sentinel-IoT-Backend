@@ -31,7 +31,7 @@ with app.app_context():
 # --- 3. TELEGRAM CONFIG (Pulls from Render Dashboard) ---
 # IMPORTANT: These must be typed in the Render "Environment" tab!
 TOKEN = os.environ.get("TELEGRAM_TOKEN")
-CHAT_ID = os.environ.get("7201797239")
+CHAT_ID = os.environ.get("TELEGRAM_CHAT_ID")
 
 # Global variable to store OTP temporarily (Cloud-safe method)
 PENDING_OTP = {}
