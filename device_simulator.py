@@ -3,11 +3,13 @@ import time
 import random
 
 # LOCAL FLASK SERVER
-URL = "https://sentinel-iot-backend-17.onrender.com/ingest"
+URL = "http://127.0.0.1:5000/ingest"
 
+# 3 MACHINES
 machines = [
     "CNC-HYD-001",
-    "LATHE-HYD-002"
+    "LATHE-HYD-002",
+    "DRILL-HYD-003"
 ]
 
 while True:
@@ -32,17 +34,17 @@ while True:
             )
 
             print(
-                f"📡 Sent to Local Server: "
+                f"📡 Sent to Cloud: "
                 f"{m_id} | "
                 f"Temp: {temperature}°C | "
                 f"Vibration: {vibration}G | "
-                f"Status: {response.status_code}"
+                f"{response.status_code}"
             )
 
         except requests.exceptions.RequestException as error:
 
             print(
-                f"❌ Flask server unavailable: {error}"
+                f"❌ Server unavailable: {error}"
             )
 
     time.sleep(2)
