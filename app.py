@@ -1,156 +1,211 @@
 import os
+import json
+import sqlite3
+import numpy as np
 import requests
-import datetime
-import random
-from flask import Flask, request, jsonify, render_template, redirect, url_for, session, send_file
-from flask_sqlalchemy import SQLAlchemy
+from flask import Flask, render_template, jsonify, send_file, request
+from flask_socketio import SocketIO
+from sklearn.ensemble import IsolationForest
 from fpdf import FPDF
+from dotenv import load_dotenv
+import paho.mqtt.client as mqtt
+
+load_dotenv()
 
 app = Flask(__name__)
+app.config['SECRET_KEY'] = os.getenv('SECRET_KEY', 'sentinel_secret_key')
+socketio = SocketIO(app, cors_allowed_origins="*")
 
-# --- 1. CLOUD SECURITY CONFIG ---
-# This pulls the secret key from Render; if not found, it uses a default
-app.secret_key = os.environ.get('SECRET_KEY', 'sentinel_ultra_recruiter_edition_99')
+TELEGRAM_BOT_TOKEN = os.getenv('TELEGRAM_BOT_TOKEN')
+TELEGRAM_CHAT_ID = os.getenv('TELEGRAM_CHAT_ID')
+MQTT_BROKER = os.getenv('MQTT_BROKER', 'localhost')
+MQTT_PORT = int(os.getenv('MQTT_PORT', 1883))
 
-# --- 2. CLOUD DATABASE CONFIG ---
-# Ensures the database file path is handled correctly by the cloud server
-basedir = os.path.abspath(os.path.dirname(__file__))
-app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///' + os.path.join(basedir, 'sentinel_ultra.db')
-app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
-db = SQLAlchemy(app)
+DB_FILE = "machine_health.db"
 
-class MachineLog(db.Model):
-    id = db.Column(db.Integer, primary_key=True)
-    machine_id = db.Column(db.String(50))
-    temperature = db.Column(db.Float)
-    vibration = db.Column(db.Float)
-    status = db.Column(db.String(20))
-    timestamp = db.Column(db.DateTime, default=datetime.datetime.now)
+def init_db():
+    conn = sqlite3.connect(DB_FILE)
+    cursor = conn.cursor()
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS telemetry (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            machine_id TEXT,
+            timestamp TEXT,
+            temperature REAL,
+            vibration REAL,
+            pressure REAL,
+            rpm INTEGER,
+            current REAL,
+            status TEXT,
+            is_anomaly INTEGER,
+            rul_hours REAL
+        )
+    ''')
+    conn.commit()
+    conn.close()
 
-with app.app_context():
-    db.create_all()
+init_db()
 
-# --- 3. TELEGRAM CONFIG (Pulls from Render Environment Variables) ---
-TOKEN = os.environ.get("TELEGRAM_TOKEN")
-CHAT_ID = os.environ.get("TELEGRAM_CHAT_ID")
-PENDING_OTP = {}
+# Train Anomaly Detection Model
+def build_ml_model():
+    X_train = []
+    for _ in range(500):
+        X_train.append([
+            np.random.uniform(60, 75),
+            np.random.uniform(0.5, 2.5),
+            np.random.uniform(28, 35),
+            np.random.randint(1450, 1750),
+            np.random.uniform(10, 15)
+        ])
+    model = IsolationForest(contamination=0.05, random_state=42)
+    model.fit(X_train)
+    return model
 
-def send_telegram_msg(text):
-    """Sends messages and logs results for cloud debugging"""
-    if not TOKEN or not CHAT_ID:
-        print(f"❌ CLOUD ERROR: API Keys missing in Render settings!")
-        return False
-    url = f"https://api.telegram.org/bot{TOKEN}/sendMessage"
-    payload = {"chat_id": CHAT_ID, "text": text}
+ml_model = build_ml_model()
+
+def calculate_rul(temp, vibration, pressure):
+    base_life = 500.0
+    strain = ((temp / 100.0) * 0.4) + ((vibration / 10.0) * 0.4) + ((pressure / 60.0) * 0.2)
+    return max(0.0, round(base_life * (1.0 - (strain * 0.6)), 1))
+
+def calculate_oee():
+    availability, performance, quality = 94.2, 88.5, 99.1
+    oee = round((availability * performance * quality) / 10000, 1)
+    return {"oee": oee, "availability": availability, "performance": performance, "quality": quality}
+
+def send_telegram_alert(message):
+    if TELEGRAM_BOT_TOKEN and TELEGRAM_CHAT_ID:
+        url = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendMessage"
+        payload = {"chat_id": TELEGRAM_CHAT_ID, "text": message, "parse_mode": "HTML"}
+        try:
+            requests.post(url, json=payload, timeout=5)
+        except Exception as e:
+            print(f"Telegram Alert Error: {e}")
+
+def process_telemetry(data):
+    temp = float(data.get('temperature', 0))
+    vibration = float(data.get('vibration', 0))
+    pressure = float(data.get('pressure', 0))
+    rpm = int(data.get('rpm', 0))
+    current = float(data.get('current', 0))
+    machine_id = data.get('machine_id', 'PUMP-01')
+    timestamp = data.get('timestamp')
+
+    # ML Inference
+    features = np.array([[temp, vibration, pressure, rpm, current]])
+    pred = ml_model.predict(features)[0]
+    is_anomaly = 1 if pred == -1 or temp > 85.0 else 0
+
+    if temp > 85.0 or is_anomaly == 1:
+        status = "CRITICAL"
+    elif temp >= 70.0 or vibration > 4.0:
+        status = "WARNING"
+    else:
+        status = "NORMAL"
+
+    rul = calculate_rul(temp, vibration, pressure)
+    oee_data = calculate_oee()
+
+    # Save to SQLite Database
+    conn = sqlite3.connect(DB_FILE)
+    cursor = conn.cursor()
+    cursor.execute('''
+        INSERT INTO telemetry (machine_id, timestamp, temperature, vibration, pressure, rpm, current, status, is_anomaly, rul_hours)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    ''', (machine_id, timestamp, temp, vibration, pressure, rpm, current, status, is_anomaly, rul))
+    conn.commit()
+    conn.close()
+
+    enriched_payload = {
+        **data,
+        "status": status,
+        "is_anomaly": is_anomaly,
+        "rul_hours": rul,
+        **oee_data
+    }
+
+    # Stream to WebSockets
+    socketio.emit('telemetry_update', enriched_payload)
+
+    # Trigger Telegram Alert
+    if status == "CRITICAL":
+        alert_msg = (
+            f"🚨 <b>CRITICAL ALERT: Sentinel-IoT</b> 🚨\n\n"
+            f"<b>Machine:</b> {machine_id}\n"
+            f"<b>Status:</b> ANOMALY / OVERHEAT DETECTED\n"
+            f"<b>Temperature:</b> {temp}°C\n"
+            f"<b>Vibration:</b> {vibration} mm/s\n"
+            f"<b>Pressure:</b> {pressure} PSI\n"
+            f"<b>RUL Remaining:</b> {rul} Hours\n"
+            f"<b>Timestamp:</b> {timestamp}"
+        )
+        send_telegram_alert(alert_msg)
+
+# MQTT Client setup
+def on_mqtt_message(client, userdata, msg):
     try:
-        r = requests.post(url, json=payload)
-        print(f"☁️ Telegram API: {r.status_code}")
-        return r.status_code == 200
-    except:
-        return False
+        payload = json.loads(msg.payload.decode())
+        process_telemetry(payload)
+    except Exception as e:
+        print(f"Error processing MQTT message: {e}")
 
-# --- 4. AUTHENTICATION ROUTES (Recruiter + Admin) ---
+mqtt_client = mqtt.Client(mqtt.CallbackAPIVersion.VERSION2, client_id="Sentinel_Backend")
+mqtt_client.on_message = on_mqtt_message
 
-@app.route('/login', methods=['GET', 'POST'])
-def login():
-    if request.method == 'POST':
-        user = request.form.get('username')
-        pw = request.form.get('password')
-        
-        # A. RECRUITER ACCESS: Direct Entry (No OTP)
-        # This makes it easy for hiring managers in Hyderabad to see your work
-        if user == "pravallika" and pw == "UMMADI":
-            session['logged_in'] = True
-            return redirect(url_for('index'))
-            
-        # B. ADMIN ACCESS: Uses 2FA OTP (For your live demo)
-        if user == "admin" and pw == "hyderabad2026":
-            otp = str(random.randint(100000, 999999))
-            PENDING_OTP['current'] = otp
-            send_telegram_msg(f"🔐 SENTINEL CLOUD ACCESS\nYour Admin OTP is: {otp}")
-            return redirect(url_for('verify_page'))
-            
-        return render_template('login.html', error="Invalid Credentials. Please use the credentials provided on LinkedIn.")
-    return render_template('login.html')
-
-@app.route('/verify')
-def verify_page():
-    return render_template('verify_otp.html')
-
-@app.route('/verify_logic', methods=['POST'])
-def verify_logic():
-    user_otp = request.form.get('otp')
-    if user_otp == PENDING_OTP.get('current'):
-        session['logged_in'] = True
-        PENDING_OTP.pop('current', None)
-        return redirect(url_for('index'))
-    return "Invalid OTP. Access Denied.", 401
-
-# --- 5. DATA & REPORTING ROUTES ---
+try:
+    mqtt_client.connect(MQTT_BROKER, MQTT_PORT, 60)
+    mqtt_client.subscribe("factory/+/telemetry")
+    mqtt_client.loop_start()
+    print("Connected to MQTT Broker listening on factory/+/telemetry")
+except Exception as e:
+    print(f"MQTT Connection warning: {e}")
 
 @app.route('/')
 def index():
-    if not session.get('logged_in'): return redirect(url_for('login'))
     return render_template('dashboard.html')
 
-@app.route('/get_machines')
-def get_machines():
-    if not session.get('logged_in'): return jsonify([]), 401
-    machines = db.session.query(MachineLog.machine_id).distinct().all()
-    return jsonify([m[0] for m in machines])
-
-@app.route('/get_data/<m_id>')
-def get_data(m_id):
-    if not session.get('logged_in'): return jsonify([]), 401
-    logs = MachineLog.query.filter_by(machine_id=m_id).order_by(MachineLog.id.desc()).limit(20).all()
-    return jsonify([{"time": l.timestamp.strftime("%H:%M:%S"), "temp": l.temperature, "vib": l.vibration, "status": l.status} for l in reversed(logs)])
-
-@app.route('/ingest', methods=['POST'])
-def ingest():
+@app.route('/api/telemetry', methods=['POST'])
+def receive_telemetry_rest():
     data = request.json
-    m_id, temp, vib = data.get("machine_id"), data.get("temperature"), data.get("vibration", 0.5)
-    
-    # Anomaly Logic
-    mode = "EMERGENCY" if temp > 85 or vib > 0.9 else ("WARNING" if temp > 75 or vib > 0.7 else "NORMAL")
-    
-    # Send Alert to your phone if Emergency
-    if mode == "EMERGENCY":
-        send_telegram_msg(f"🚨 ALERT: {m_id} critical at {temp}C!")
+    process_telemetry(data)
+    return jsonify({"status": "success", "message": "Telemetry processed"}), 200
 
-    new_entry = MachineLog(machine_id=m_id, temperature=temp, vibration=vib, status=mode)
-    db.session.add(new_entry)
-    db.session.commit()
-    return jsonify({"status": mode}), 201
+@app.route('/api/reports/pdf', methods=['GET'])
+def generate_pdf_report():
+    conn = sqlite3.connect(DB_FILE)
+    cursor = conn.cursor()
+    cursor.execute("SELECT timestamp, temperature, vibration, status, rul_hours FROM telemetry ORDER BY id DESC LIMIT 20")
+    rows = cursor.fetchall()
+    conn.close()
 
-@app.route('/export_report/<m_id>')
-def export_report(m_id):
-    logs = MachineLog.query.filter_by(machine_id=m_id).order_by(MachineLog.id.desc()).limit(50).all()
     pdf = FPDF()
     pdf.add_page()
-    pdf.set_font("Arial", 'B', 16)
-    pdf.cell(190, 10, f"INDUSTRIAL AUDIT: {m_id}", 1, 1, 'C')
+    pdf.set_font("Helvetica", 'B', 16)
+    pdf.cell(0, 10, "Sentinel-IoT: Industrial Machine Health Shift Report", ln=True, align='C')
+    pdf.set_font("Helvetica", size=10)
+    pdf.cell(0, 10, f"Generated Report | Machine: PUMP-01", ln=True, align='C')
     pdf.ln(10)
-    pdf.set_font("Arial", size=10)
-    for log in logs:
-        pdf.cell(190, 8, f"{log.timestamp} | {log.temperature}C | {log.vibration}G | {log.status}", 0, 1)
-    
-    # Writing to /tmp is required for cloud servers
-    path = f"/tmp/{m_id}_audit_report.pdf" 
-    pdf.output(path)
-    return send_file(path, as_attachment=True)
 
-@app.route('/test_bot')
-def test_bot():
-    """Diagnostic link for you to check connectivity"""
-    result = send_telegram_msg("🚀 Cloud Deployment Link Verified!")
-    return f"Test Sent! Status: {'Success' if result else 'Failed'}. Check Render logs for keys."
+    pdf.set_font("Helvetica", 'B', 10)
+    pdf.cell(45, 8, "Timestamp", 1)
+    pdf.cell(30, 8, "Temp (°C)", 1)
+    pdf.cell(35, 8, "Vibration", 1)
+    pdf.cell(35, 8, "Status", 1)
+    pdf.cell(40, 8, "RUL (Hours)", 1)
+    pdf.ln()
 
-@app.route('/logout')
-def logout():
-    session.clear()
-    return redirect(url_for('login'))
+    pdf.set_font("Helvetica", size=9)
+    for row in rows:
+        pdf.cell(45, 8, str(row[0]), 1)
+        pdf.cell(30, 8, str(row[1]), 1)
+        pdf.cell(35, 8, str(row[2]), 1)
+        pdf.cell(35, 8, str(row[3]), 1)
+        pdf.cell(40, 8, str(row[4]), 1)
+        pdf.ln()
+
+    report_path = "shift_report.pdf"
+    pdf.output(report_path)
+    return send_file(report_path, as_attachment=True)
 
 if __name__ == '__main__':
-    # Use environment port for Render, default 5000 for local
-    port = int(os.environ.get("PORT", 5000))
-    app.run(host='0.0.0.0', port=port)
+    socketio.run(app, debug=True, port=5000)

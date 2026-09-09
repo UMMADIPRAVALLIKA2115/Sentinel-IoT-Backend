@@ -2,81 +2,151 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <title>Sentinel Ultra | Cloud Dashboard</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Sentinel-IoT v3.0 | Executive Dashboard</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet">
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
-    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <script src="https://cdn.socket.io/4.7.2/socket.io.min.js"></script>
     <style>
-        body { background: #05070a; color: #e2e8f0; font-family: 'Segoe UI', sans-serif; padding: 20px; }
-        .glass-card { background: rgba(30, 41, 59, 0.7); border: 1px solid #334155; border-radius: 20px; padding: 20px; margin-bottom: 20px; }
-        .temp-main { font-size: 3.5rem; font-weight: 900; color: #38bdf8; }
-        .bg-NORMAL { background: #10b981; } .bg-WARNING { background: #f59e0b; color: #000; } .bg-EMERGENCY { background: #ef4444; }
+        body { background-color: #0d1117; color: #c9d1d9; font-family: system-ui, sans-serif; }
+        .card { background-color: #161b22; border: 1px solid #30363d; border-radius: 10px; }
+        .metric-title { font-size: 0.85rem; color: #8b949e; text-transform: uppercase; letter-spacing: 1px; }
+        .metric-value { font-size: 1.8rem; font-weight: 700; color: #58a6ff; }
+        .badge-normal { background-color: #238636; color: white; }
+        .badge-warning { background-color: #d29922; color: black; }
+        .badge-critical { background-color: #da3633; color: white; }
     </style>
 </head>
-<body>
+<body class="p-4">
     <div class="container-fluid">
         <div class="d-flex justify-content-between align-items-center mb-4">
-            <h1 class="fw-bold">🛡️ SENTINEL <span class="text-info">ULTRA</span></h1>
-            <div class="d-flex gap-2">
-                <button onclick="downloadPDF()" class="btn btn-info">GENERATE PDF</button>
-                <a href="/logout" class="btn btn-outline-danger">LOGOUT</a>
+            <div>
+                <h2 class="fw-bold text-light mb-0">🏭 Sentinel-IoT <span class="badge bg-primary fs-6">v3.0</span></h2>
+                <small class="text-secondary">Industrial Machine Health & Predictive Maintenance Platform</small>
+            </div>
+            <div>
+                <a href="/api/reports/pdf" class="btn btn-outline-info btn-sm me-2">📄 Export Shift Report (PDF)</a>
+                <span id="system-status" class="badge badge-normal fs-6 px-3 py-2">🟢 System Normal</span>
             </div>
         </div>
 
-        <div class="row">
-            <div class="col-lg-3">
-                <div class="glass-card text-center">
-                    <h6>MACHINE</h6>
-                    <select id="machineSelect" class="form-select bg-dark text-white border-info mb-4" onchange="refreshData()"></select>
-                    <h6>LIVE TELEMETRY</h6>
-                    <div class="temp-main" id="liveTemp">--</div>
-                    <div id="statusBadge" class="mt-2"></div>
+        <!-- Metrics Row -->
+        <div class="row g-3 mb-4">
+            <div class="col-md-2">
+                <div class="card p-3 text-center">
+                    <div class="metric-title">OEE Index</div>
+                    <div class="metric-value text-success" id="oee-val">--%</div>
                 </div>
             </div>
-            <div class="col-lg-9">
-                <div class="glass-card"><canvas id="tempChart" height="85"></canvas></div>
-                <div class="glass-card"><canvas id="vibChart" height="85"></canvas></div>
+            <div class="col-md-2">
+                <div class="card p-3 text-center">
+                    <div class="metric-title">Remaining Life</div>
+                    <div class="metric-value text-warning" id="rul-val">-- hrs</div>
+                </div>
+            </div>
+            <div class="col-md-2">
+                <div class="card p-3 text-center">
+                    <div class="metric-title">Temperature</div>
+                    <div class="metric-value text-info" id="temp-val">-- °C</div>
+                </div>
+            </div>
+            <div class="col-md-2">
+                <div class="card p-3 text-center">
+                    <div class="metric-title">Vibration</div>
+                    <div class="metric-value text-light" id="vib-val">-- mm/s</div>
+                </div>
+            </div>
+            <div class="col-md-2">
+                <div class="card p-3 text-center">
+                    <div class="metric-title">Pressure</div>
+                    <div class="metric-value text-light" id="pres-val">-- PSI</div>
+                </div>
+            </div>
+            <div class="col-md-2">
+                <div class="card p-3 text-center">
+                    <div class="metric-title">ML Anomaly Risk</div>
+                    <div class="metric-value text-danger" id="anomaly-val">LOW</div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Live Charts -->
+        <div class="row g-3">
+            <div class="col-md-6">
+                <div class="card p-3">
+                    <h6 class="metric-title mb-3">Temperature (°C) Real-Time Stream</h6>
+                    <canvas id="tempChart" height="180"></canvas>
+                </div>
+            </div>
+            <div class="col-md-6">
+                <div class="card p-3">
+                    <h6 class="metric-title mb-3">Vibration (mm/s) & Pressure (PSI)</h6>
+                    <canvas id="multiSensorChart" height="180"></canvas>
+                </div>
             </div>
         </div>
     </div>
 
     <script>
-        const chartConfig = (color) => ({
+        const socket = io();
+        const maxPoints = 20;
+
+        const tempChart = new Chart(document.getElementById('tempChart'), {
             type: 'line',
-            data: { labels: [], datasets: [{ data: [], borderColor: color, fill: true, backgroundColor: color+'22', tension: 0.4 }] },
-            options: { scales: { y: { beginAtZero: false } }, plugins: { legend: { display: false } } }
+            data: { labels: [], datasets: [{ label: 'Temp (°C)', data: [], borderColor: '#58a6ff', tension: 0.3 }] },
+            options: { responsive: true, scales: { y: { min: 50, max: 110 } } }
         });
 
-        const tempChart = new Chart(document.getElementById('tempChart'), chartConfig('#38bdf8'));
-        const vibChart = new Chart(document.getElementById('vibChart'), chartConfig('#a855f7'));
+        const multiChart = new Chart(document.getElementById('multiSensorChart'), {
+            type: 'line',
+            data: {
+                labels: [],
+                datasets: [
+                    { label: 'Vibration (mm/s)', data: [], borderColor: '#3fb950', tension: 0.3 },
+                    { label: 'Pressure (PSI)', data: [], borderColor: '#d29922', tension: 0.3 }
+                ]
+            },
+            options: { responsive: true }
+        });
 
-        async function refreshData() {
-            const m_id = document.getElementById('machineSelect').value;
-            if(!m_id) return;
-            const res = await fetch(`/get_data/${m_id}`);
-            const data = await res.json();
-            if(data.length > 0) {
-                const times = data.map(i => i.time);
-                tempChart.data.labels = times; tempChart.data.datasets[0].data = data.map(i => i.temp); tempChart.update('none');
-                vibChart.data.labels = times; vibChart.data.datasets[0].data = data.map(i => i.vib); vibChart.update('none');
-                
-                const latest = data[data.length - 1];
-                document.getElementById('liveTemp').innerText = latest.temp + "°C";
-                document.getElementById('statusBadge').innerHTML = `<span class="badge bg-${latest.status}">${latest.status}</span>`;
+        socket.on('telemetry_update', (data) => {
+            document.getElementById('oee-val').innerText = data.oee + '%';
+            document.getElementById('rul-val').innerText = data.rul_hours + ' h';
+            document.getElementById('temp-val').innerText = data.temperature + ' °C';
+            document.getElementById('vib-val').innerText = data.vibration + ' mm/s';
+            document.getElementById('pres-val').innerText = data.pressure + ' PSI';
+            document.getElementById('anomaly-val').innerText = data.is_anomaly === 1 ? 'CRITICAL' : 'LOW';
+
+            const statusBadge = document.getElementById('system-status');
+            if (data.status === 'CRITICAL') {
+                statusBadge.className = 'badge badge-critical fs-6 px-3 py-2';
+                statusBadge.innerText = '🔴 Critical Anomaly / Overheat';
+            } else if (data.status === 'WARNING') {
+                statusBadge.className = 'badge badge-warning fs-6 px-3 py-2';
+                statusBadge.innerText = '🟡 Warning State';
+            } else {
+                statusBadge.className = 'badge badge-normal fs-6 px-3 py-2';
+                statusBadge.innerText = '🟢 System Normal';
             }
-        }
 
-        async function loadMachines() {
-            const res = await fetch('/get_machines');
-            const machines = await res.json();
-            const select = document.getElementById('machineSelect');
-            if(machines.length > 0 && !select.value) {
-                select.innerHTML = machines.map(m => `<option value="${m}">${m}</option>`).join("");
+            const timeStr = data.timestamp.split(' ')[1];
+            if (tempChart.data.labels.length >= maxPoints) {
+                tempChart.data.labels.shift();
+                tempChart.data.datasets[0].data.shift();
+                multiChart.data.labels.shift();
+                multiChart.data.datasets[0].data.shift();
+                multiChart.data.datasets[1].data.shift();
             }
-        }
 
-        function downloadPDF() { window.location.href = `/export_report/${document.getElementById('machineSelect').value}`; }
+            tempChart.data.labels.push(timeStr);
+            tempChart.data.datasets[0].data.push(data.temperature);
+            tempChart.update();
 
-        setInterval(() => { loadMachines(); refreshData(); }, 2000);
+            multiChart.data.labels.push(timeStr);
+            multiChart.data.datasets[0].data.push(data.vibration);
+            multiChart.data.datasets[1].data.push(data.pressure);
+            multiChart.update();
+        });
     </script>
 </body>
 </html>
