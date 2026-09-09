@@ -2,668 +2,155 @@ import os
 import requests
 import datetime
 import random
-import time
-
-from dotenv import load_dotenv
-
-from flask import (
-    Flask,
-    request,
-    jsonify,
-    render_template,
-    redirect,
-    url_for,
-    session,
-    send_file
-)
-
+from flask import Flask, request, jsonify, render_template, redirect, url_for, session, send_file
 from flask_sqlalchemy import SQLAlchemy
 from fpdf import FPDF
 
-
-# ============================================================
-# LOAD ENVIRONMENT VARIABLES
-# ============================================================
-
-load_dotenv()
-
-
-# ============================================================
-# FLASK APP
-# ============================================================
-
 app = Flask(__name__)
 
-app.secret_key = os.environ.get(
-    "SECRET_KEY",
-    "sentinel-ultra-local-secret"
-)
+# --- 1. CLOUD SECURITY CONFIG ---
+# This pulls the secret key from Render; if not found, it uses a default
+app.secret_key = os.environ.get('SECRET_KEY', 'sentinel_ultra_recruiter_edition_99')
 
-
-# ============================================================
-# DATABASE
-# ============================================================
-
+# --- 2. CLOUD DATABASE CONFIG ---
+# Ensures the database file path is handled correctly by the cloud server
 basedir = os.path.abspath(os.path.dirname(__file__))
-
-app.config["SQLALCHEMY_DATABASE_URI"] = (
-    "sqlite:///" +
-    os.path.join(basedir, "sentinel_ultra.db")
-)
-
-app.config["SQLALCHEMY_TRACK_MODIFICATIONS"] = False
-
+app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///' + os.path.join(basedir, 'sentinel_ultra.db')
+app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
 db = SQLAlchemy(app)
 
-
-# ============================================================
-# MACHINE TELEMETRY TABLE
-# ============================================================
-
 class MachineLog(db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    machine_id = db.Column(db.String(50))
+    temperature = db.Column(db.Float)
+    vibration = db.Column(db.Float)
+    status = db.Column(db.String(20))
+    timestamp = db.Column(db.DateTime, default=datetime.datetime.now)
 
-    id = db.Column(
-        db.Integer,
-        primary_key=True
-    )
-
-    machine_id = db.Column(
-        db.String(50)
-    )
-
-    temperature = db.Column(
-        db.Float
-    )
-
-    vibration = db.Column(
-        db.Float
-    )
-
-    status = db.Column(
-        db.String(20)
-    )
-
-    timestamp = db.Column(
-        db.DateTime,
-        default=datetime.datetime.now
-    )
-
-
-# Create database/table automatically
 with app.app_context():
     db.create_all()
 
-
-# ============================================================
-# TELEGRAM CONFIGURATION
-# ============================================================
-
+# --- 3. TELEGRAM CONFIG (Pulls from Render Environment Variables) ---
 TOKEN = os.environ.get("TELEGRAM_TOKEN")
 CHAT_ID = os.environ.get("TELEGRAM_CHAT_ID")
-
-
-# Send normal telemetry every 10 seconds
-TELEGRAM_INTERVAL = 10
-
-
-# Remember last Telegram message for each machine
-LAST_TELEGRAM_UPDATE = {}
-
-
-# Emergency alert cooldown
-EMERGENCY_COOLDOWN = 30
-
-
-# ============================================================
-# TELEGRAM FUNCTION
-# ============================================================
+PENDING_OTP = {}
 
 def send_telegram_msg(text):
-
+    """Sends messages and logs results for cloud debugging"""
     if not TOKEN or not CHAT_ID:
-
-        print(
-            "⚠️ Telegram credentials missing."
-        )
-
+        print(f"❌ CLOUD ERROR: API Keys missing in Render settings!")
         return False
-
-
-    url = (
-        f"https://api.telegram.org/"
-        f"bot{TOKEN}/sendMessage"
-    )
-
-
-    payload = {
-        "chat_id": CHAT_ID,
-        "text": text
-    }
-
-
+    url = f"https://api.telegram.org/bot{TOKEN}/sendMessage"
+    payload = {"chat_id": CHAT_ID, "text": text}
     try:
-
-        response = requests.post(
-            url,
-            json=payload,
-            timeout=10
-        )
-
-
-        print(
-            f"☁️ Telegram API: "
-            f"{response.status_code}"
-        )
-
-
-        if response.status_code != 200:
-
-            print(
-                f"Telegram response: "
-                f"{response.text}"
-            )
-
-
-        return response.status_code == 200
-
-
-    except requests.exceptions.RequestException as error:
-
-        print(
-            f"❌ Telegram connection error: "
-            f"{error}"
-        )
-
+        r = requests.post(url, json=payload)
+        print(f"☁️ Telegram API: {r.status_code}")
+        return r.status_code == 200
+    except:
         return False
 
+# --- 4. AUTHENTICATION ROUTES (Recruiter + Admin) ---
 
-# ============================================================
-# LOGIN
-# ============================================================
-
-@app.route("/login", methods=["GET", "POST"])
+@app.route('/login', methods=['GET', 'POST'])
 def login():
+    if request.method == 'POST':
+        user = request.form.get('username')
+        pw = request.form.get('password')
+        
+        # A. RECRUITER ACCESS: Direct Entry (No OTP)
+        # This makes it easy for hiring managers in Hyderabad to see your work
+        if user == "pravallika" and pw == "UMMADI":
+            session['logged_in'] = True
+            return redirect(url_for('index'))
+            
+        # B. ADMIN ACCESS: Uses 2FA OTP (For your live demo)
+        if user == "admin" and pw == "hyderabad2026":
+            otp = str(random.randint(100000, 999999))
+            PENDING_OTP['current'] = otp
+            send_telegram_msg(f"🔐 SENTINEL CLOUD ACCESS\nYour Admin OTP is: {otp}")
+            return redirect(url_for('verify_page'))
+            
+        return render_template('login.html', error="Invalid Credentials. Please use the credentials provided on LinkedIn.")
+    return render_template('login.html')
 
-    if request.method == "POST":
+@app.route('/verify')
+def verify_page():
+    return render_template('verify_otp.html')
 
-        user = request.form.get("username")
-        password = request.form.get("password")
+@app.route('/verify_logic', methods=['POST'])
+def verify_logic():
+    user_otp = request.form.get('otp')
+    if user_otp == PENDING_OTP.get('current'):
+        session['logged_in'] = True
+        PENDING_OTP.pop('current', None)
+        return redirect(url_for('index'))
+    return "Invalid OTP. Access Denied.", 401
 
+# --- 5. DATA & REPORTING ROUTES ---
 
-        if (
-            user == "pravallika"
-            and password == "UMMADI"
-        ):
-
-            session["logged_in"] = True
-
-            return redirect(
-                url_for("index")
-            )
-
-
-        return render_template(
-            "login.html",
-            error=(
-                "Invalid Credentials. "
-                "Please use the credentials provided."
-            )
-        )
-
-
-    return render_template("login.html")
-
-
-# ============================================================
-# DASHBOARD
-# ============================================================
-
-@app.route("/")
+@app.route('/')
 def index():
+    if not session.get('logged_in'): return redirect(url_for('login'))
+    return render_template('dashboard.html')
 
-    if not session.get("logged_in"):
-
-        return redirect(
-            url_for("login")
-        )
-
-
-    return render_template(
-        "dashboard.html"
-    )
-
-
-# ============================================================
-# GET ALL MACHINES
-# ============================================================
-
-@app.route("/get_machines")
+@app.route('/get_machines')
 def get_machines():
+    if not session.get('logged_in'): return jsonify([]), 401
+    machines = db.session.query(MachineLog.machine_id).distinct().all()
+    return jsonify([m[0] for m in machines])
 
-    if not session.get("logged_in"):
-
-        return jsonify([]), 401
-
-
-    machines = (
-        db.session
-        .query(MachineLog.machine_id)
-        .distinct()
-        .all()
-    )
-
-
-    machine_list = [
-        machine[0]
-        for machine in machines
-        if machine[0]
-    ]
-
-
-    return jsonify(machine_list)
-
-
-# ============================================================
-# GET LATEST 20 READINGS
-# ============================================================
-
-@app.route("/get_data/<m_id>")
+@app.route('/get_data/<m_id>')
 def get_data(m_id):
+    if not session.get('logged_in'): return jsonify([]), 401
+    logs = MachineLog.query.filter_by(machine_id=m_id).order_by(MachineLog.id.desc()).limit(20).all()
+    return jsonify([{"time": l.timestamp.strftime("%H:%M:%S"), "temp": l.temperature, "vib": l.vibration, "status": l.status} for l in reversed(logs)])
 
-    if not session.get("logged_in"):
-
-        return jsonify([]), 401
-
-
-    logs = (
-        MachineLog.query
-        .filter_by(machine_id=m_id)
-        .order_by(MachineLog.id.desc())
-        .limit(20)
-        .all()
-    )
-
-
-    logs.reverse()
-
-
-    result = []
-
-
-    for log in logs:
-
-        result.append({
-
-            "time": log.timestamp.strftime(
-                "%H:%M:%S"
-            ),
-
-            "temp": log.temperature,
-
-            "vib": log.vibration,
-
-            "status": log.status
-
-        })
-
-
-    return jsonify(result)
-
-
-# ============================================================
-# INGEST TELEMETRY
-# ============================================================
-
-@app.route("/ingest", methods=["POST"])
+@app.route('/ingest', methods=['POST'])
 def ingest():
+    data = request.json
+    m_id, temp, vib = data.get("machine_id"), data.get("temperature"), data.get("vibration", 0.5)
+    
+    # Anomaly Logic
+    mode = "EMERGENCY" if temp > 85 or vib > 0.9 else ("WARNING" if temp > 75 or vib > 0.7 else "NORMAL")
+    
+    # Send Alert to your phone if Emergency
+    if mode == "EMERGENCY":
+        send_telegram_msg(f"🚨 ALERT: {m_id} critical at {temp}C!")
 
-    data = request.get_json(
-        silent=True
-    ) or {}
-
-
-    machine_id = data.get(
-        "machine_id"
-    )
-
-    temperature = data.get(
-        "temperature"
-    )
-
-    vibration = data.get(
-        "vibration",
-        0.5
-    )
-
-
-    # --------------------------------------------------------
-    # VALIDATION
-    # --------------------------------------------------------
-
-    if machine_id is None:
-
-        return jsonify({
-            "error": "machine_id is required"
-        }), 400
-
-
-    if temperature is None:
-
-        return jsonify({
-            "error": "temperature is required"
-        }), 400
-
-
-    try:
-
-        temperature = float(
-            temperature
-        )
-
-        vibration = float(
-            vibration
-        )
-
-    except (TypeError, ValueError):
-
-        return jsonify({
-            "error": "temperature and vibration must be numbers"
-        }), 400
-
-
-    # --------------------------------------------------------
-    # MACHINE STATUS
-    # --------------------------------------------------------
-
-    if (
-        temperature > 85
-        or vibration > 0.90
-    ):
-
-        status = "EMERGENCY"
-
-    elif (
-        temperature > 75
-        or vibration > 0.70
-    ):
-
-        status = "WARNING"
-
-    else:
-
-        status = "NORMAL"
-
-
-    # --------------------------------------------------------
-    # SAVE TO DATABASE
-    # --------------------------------------------------------
-
-    new_entry = MachineLog(
-
-        machine_id=machine_id,
-
-        temperature=temperature,
-
-        vibration=vibration,
-
-        status=status
-
-    )
-
-
-    db.session.add(
-        new_entry
-    )
-
+    new_entry = MachineLog(machine_id=m_id, temperature=temp, vibration=vib, status=mode)
+    db.session.add(new_entry)
     db.session.commit()
+    return jsonify({"status": mode}), 201
 
-
-    # --------------------------------------------------------
-    # TELEGRAM LIVE MESSAGE
-    # --------------------------------------------------------
-
-    now = time.time()
-
-    last_message_time = (
-        LAST_TELEGRAM_UPDATE.get(
-            machine_id,
-            0
-        )
-    )
-
-
-    seconds_since_last = (
-        now - last_message_time
-    )
-
-
-    send_message = False
-
-
-    # Emergency:
-    # send immediately, but don't spam every 2 seconds
-
-    if status == "EMERGENCY":
-
-        if seconds_since_last >= EMERGENCY_COOLDOWN:
-
-            send_message = True
-
-
-    # Normal / Warning:
-    # send live update every 10 seconds
-
-    elif seconds_since_last >= TELEGRAM_INTERVAL:
-
-        send_message = True
-
-
-    if send_message:
-
-        if status == "NORMAL":
-
-            emoji = "🟢"
-
-        elif status == "WARNING":
-
-            emoji = "🟠"
-
-        else:
-
-            emoji = "🚨"
-
-
-        message = (
-            f"{emoji} SENTINEL ULTRA\n\n"
-            f"🏭 Machine: {machine_id}\n"
-            f"🌡️ Temperature: {temperature:.1f} °C\n"
-            f"📳 Vibration: {vibration:.2f} G\n"
-            f"⚠️ Status: {status}\n"
-            f"🕐 Time: "
-            f"{datetime.datetime.now().strftime('%H:%M:%S')}\n\n"
-            f"☁️ Cloud monitoring: ACTIVE"
-        )
-
-
-        if send_telegram_msg(message):
-
-            LAST_TELEGRAM_UPDATE[
-                machine_id
-            ] = now
-
-
-    # --------------------------------------------------------
-    # RESPONSE
-    # --------------------------------------------------------
-
-    return jsonify({
-
-        "status": status,
-
-        "machine_id": machine_id,
-
-        "temperature": temperature,
-
-        "vibration": vibration
-
-    }), 201
-
-
-# ============================================================
-# PDF REPORT
-# ============================================================
-
-@app.route("/export_report/<m_id>")
+@app.route('/export_report/<m_id>')
 def export_report(m_id):
-
-    if not session.get("logged_in"):
-
-        return redirect(
-            url_for("login")
-        )
-
-
-    logs = (
-        MachineLog.query
-        .filter_by(machine_id=m_id)
-        .order_by(MachineLog.id.desc())
-        .limit(50)
-        .all()
-    )
-
-
+    logs = MachineLog.query.filter_by(machine_id=m_id).order_by(MachineLog.id.desc()).limit(50).all()
     pdf = FPDF()
-
     pdf.add_page()
-
-    pdf.set_font(
-        "Arial",
-        "B",
-        16
-    )
-
-
-    pdf.cell(
-        190,
-        10,
-        f"INDUSTRIAL AUDIT: {m_id}",
-        1,
-        1,
-        "C"
-    )
-
-
+    pdf.set_font("Arial", 'B', 16)
+    pdf.cell(190, 10, f"INDUSTRIAL AUDIT: {m_id}", 1, 1, 'C')
     pdf.ln(10)
-
-
-    pdf.set_font(
-        "Arial",
-        size=10
-    )
-
-
+    pdf.set_font("Arial", size=10)
     for log in logs:
-
-        line = (
-            f"{log.timestamp} | "
-            f"{log.temperature:.1f}C | "
-            f"{log.vibration:.2f}G | "
-            f"{log.status}"
-        )
-
-
-        pdf.cell(
-            190,
-            8,
-            line,
-            0,
-            1
-        )
-
-
-    filename = (
-        f"{m_id}_audit_report.pdf"
-    )
-
-
-    path = os.path.join(
-        "/tmp",
-        filename
-    )
-
-
+        pdf.cell(190, 8, f"{log.timestamp} | {log.temperature}C | {log.vibration}G | {log.status}", 0, 1)
+    
+    # Writing to /tmp is required for cloud servers
+    path = f"/tmp/{m_id}_audit_report.pdf" 
     pdf.output(path)
+    return send_file(path, as_attachment=True)
 
-
-    return send_file(
-        path,
-        as_attachment=True,
-        download_name=filename
-    )
-
-
-# ============================================================
-# TELEGRAM TEST
-# ============================================================
-
-@app.route("/test_bot")
+@app.route('/test_bot')
 def test_bot():
+    """Diagnostic link for you to check connectivity"""
+    result = send_telegram_msg("🚀 Cloud Deployment Link Verified!")
+    return f"Test Sent! Status: {'Success' if result else 'Failed'}. Check Render logs for keys."
 
-    if not session.get("logged_in"):
-
-        return redirect(
-            url_for("login")
-        )
-
-
-    result = send_telegram_msg(
-        "🚀 SENTINEL ULTRA\n\n"
-        "Telegram connection is working!\n"
-        "☁️ Cloud monitoring: ACTIVE"
-    )
-
-
-    if result:
-
-        return "Telegram test sent successfully."
-
-    return (
-        "Telegram test failed. "
-        "Check TELEGRAM_TOKEN and "
-        "TELEGRAM_CHAT_ID."
-    )
-
-
-# ============================================================
-# LOGOUT
-# ============================================================
-
-@app.route("/logout")
+@app.route('/logout')
 def logout():
-
     session.clear()
+    return redirect(url_for('login'))
 
-    return redirect(
-        url_for("login")
-    )
-
-
-# ============================================================
-# RUN
-# ============================================================
-
-if __name__ == "__main__":
-
-    port = int(
-        os.environ.get(
-            "PORT",
-            5000
-        )
-    )
-
-
-    app.run(
-        host="0.0.0.0",
-        port=port,
-        debug=True
-    )
+if __name__ == '__main__':
+    # Use environment port for Render, default 5000 for local
+    port = int(os.environ.get("PORT", 5000))
+    app.run(host='0.0.0.0', port=port)
