@@ -64,7 +64,7 @@ def login():
             return redirect(url_for('index'))
             
         # B. ADMIN ACCESS: Uses 2FA OTP (For your live demo)
-        if user == "admin" and pw == "hyderabad2026":
+        if user == "pravallika" and pw == "UMMADI":
             otp = str(random.randint(100000, 999999))
             PENDING_OTP['current'] = otp
             send_telegram_msg(f"🔐 SENTINEL CLOUD ACCESS\nYour Admin OTP is: {otp}")
