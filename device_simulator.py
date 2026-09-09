@@ -3,7 +3,7 @@ import time
 import random
 
 # LOCAL FLASK SERVER
-URL = "http://127.0.0.1:5000/ingest"
+URL = "https://sentinel-iot-backend-17.onrender.com/ingest"
 
 machines = [
     "CNC-HYD-001",
