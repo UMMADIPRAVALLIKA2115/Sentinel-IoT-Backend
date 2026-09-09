@@ -2,81 +2,872 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+
     <title>Sentinel Ultra | Cloud Dashboard</title>
-    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
-    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+
+    <!-- Chart.js -->
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.4/dist/chart.umd.min.js"></script>
+
+    <link
+        href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css"
+        rel="stylesheet"
+    >
+
     <style>
-        body { background: #05070a; color: #e2e8f0; font-family: 'Segoe UI', sans-serif; padding: 20px; }
-        .glass-card { background: rgba(30, 41, 59, 0.7); border: 1px solid #334155; border-radius: 20px; padding: 20px; margin-bottom: 20px; }
-        .temp-main { font-size: 3.5rem; font-weight: 900; color: #38bdf8; }
-        .bg-NORMAL { background: #10b981; } .bg-WARNING { background: #f59e0b; color: #000; } .bg-EMERGENCY { background: #ef4444; }
+        body {
+            background: #05070a;
+            color: #e2e8f0;
+            font-family: "Segoe UI", sans-serif;
+            padding: 20px;
+        }
+
+        .glass-card {
+            background: rgba(30, 41, 59, 0.85);
+            border: 1px solid #334155;
+            border-radius: 20px;
+            padding: 20px;
+            margin-bottom: 20px;
+            box-shadow: 0 10px 30px rgba(0,0,0,0.25);
+        }
+
+        .temp-main {
+            font-size: 3.5rem;
+            font-weight: 900;
+            color: #38bdf8;
+            margin-top: 15px;
+        }
+
+        .vibration-main {
+            font-size: 1.5rem;
+            font-weight: 700;
+            margin-top: 10px;
+        }
+
+        .machine-title {
+            font-size: 0.85rem;
+            letter-spacing: 2px;
+            color: #94a3b8;
+            font-weight: 700;
+        }
+
+        .telemetry-label {
+            font-size: 0.8rem;
+            color: #94a3b8;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+        }
+
+        .chart-container {
+            position: relative;
+            height: 300px;
+        }
+
+        .status-badge {
+            font-size: 0.9rem;
+            padding: 8px 18px;
+            border-radius: 20px;
+            display: inline-block;
+            font-weight: 700;
+        }
+
+        .status-NORMAL {
+            background: #10b981;
+            color: white;
+        }
+
+        .status-WARNING {
+            background: #f59e0b;
+            color: black;
+        }
+
+        .status-EMERGENCY {
+            background: #ef4444;
+            color: white;
+            animation: pulse 1s infinite;
+        }
+
+        .online-dot {
+            display: inline-block;
+            width: 10px;
+            height: 10px;
+            background: #10b981;
+            border-radius: 50%;
+            margin-right: 6px;
+            box-shadow: 0 0 10px #10b981;
+        }
+
+        .offline-dot {
+            display: inline-block;
+            width: 10px;
+            height: 10px;
+            background: #ef4444;
+            border-radius: 50%;
+            margin-right: 6px;
+        }
+
+        .error-box {
+            display: none;
+            background: rgba(239,68,68,0.15);
+            border: 1px solid #ef4444;
+            color: #fca5a5;
+            padding: 12px;
+            border-radius: 10px;
+            margin-bottom: 15px;
+        }
+
+        @keyframes pulse {
+            50% {
+                opacity: 0.5;
+            }
+        }
     </style>
 </head>
+
 <body>
-    <div class="container-fluid">
-        <div class="d-flex justify-content-between align-items-center mb-4">
-            <h1 class="fw-bold">🛡️ SENTINEL <span class="text-info">ULTRA</span></h1>
-            <div class="d-flex gap-2">
-                <button onclick="downloadPDF()" class="btn btn-info">GENERATE PDF</button>
-                <a href="/logout" class="btn btn-outline-danger">LOGOUT</a>
-            </div>
+
+<div class="container-fluid">
+
+    <!-- HEADER -->
+    <div class="d-flex justify-content-between align-items-center mb-4">
+
+        <h1 class="fw-bold">
+            🛡️ SENTINEL
+            <span class="text-info">ULTRA</span>
+        </h1>
+
+        <div class="d-flex gap-2">
+
+            <button
+                onclick="downloadPDF()"
+                class="btn btn-info fw-bold"
+            >
+                GENERATE PDF
+            </button>
+
+            <a
+                href="/logout"
+                class="btn btn-outline-danger"
+            >
+                LOGOUT
+            </a>
+
         </div>
 
-        <div class="row">
-            <div class="col-lg-3">
-                <div class="glass-card text-center">
-                    <h6>MACHINE</h6>
-                    <select id="machineSelect" class="form-select bg-dark text-white border-info mb-4" onchange="refreshData()"></select>
-                    <h6>LIVE TELEMETRY</h6>
-                    <div class="temp-main" id="liveTemp">--</div>
-                    <div id="statusBadge" class="mt-2"></div>
-                </div>
-            </div>
-            <div class="col-lg-9">
-                <div class="glass-card"><canvas id="tempChart" height="85"></canvas></div>
-                <div class="glass-card"><canvas id="vibChart" height="85"></canvas></div>
-            </div>
-        </div>
     </div>
 
-    <script>
-        const chartConfig = (color) => ({
-            type: 'line',
-            data: { labels: [], datasets: [{ data: [], borderColor: color, fill: true, backgroundColor: color+'22', tension: 0.4 }] },
-            options: { scales: { y: { beginAtZero: false } }, plugins: { legend: { display: false } } }
+
+    <!-- ERROR -->
+    <div id="errorBox" class="error-box"></div>
+
+
+    <div class="row">
+
+        <!-- LEFT PANEL -->
+        <div class="col-lg-3">
+
+            <div class="glass-card text-center">
+
+                <div class="machine-title mb-2">
+                    MACHINE
+                </div>
+
+                <select
+                    id="machineSelect"
+                    class="form-select bg-dark text-white border-info mb-4"
+                >
+                    <option value="">
+                        Loading machines...
+                    </option>
+                </select>
+
+
+                <div class="telemetry-label">
+                    CONNECTION
+                </div>
+
+                <div id="connectionStatus" class="mt-2 mb-3">
+                    <span class="offline-dot"></span>
+                    Connecting...
+                </div>
+
+
+                <hr>
+
+
+                <div class="telemetry-label">
+                    LIVE TEMPERATURE
+                </div>
+
+                <div
+                    class="temp-main"
+                    id="liveTemp"
+                >
+                    --
+                </div>
+
+
+                <div class="telemetry-label mt-4">
+                    VIBRATION
+                </div>
+
+                <div
+                    class="vibration-main"
+                    id="liveVibration"
+                >
+                    --
+                </div>
+
+
+                <div
+                    id="statusBadge"
+                    class="mt-4"
+                >
+                    <span class="status-badge">
+                        WAITING
+                    </span>
+                </div>
+
+            </div>
+
+        </div>
+
+
+        <!-- RIGHT PANEL -->
+        <div class="col-lg-9">
+
+            <!-- TEMPERATURE -->
+            <div class="glass-card">
+
+                <div class="d-flex justify-content-between mb-3">
+
+                    <h5 class="fw-bold">
+                        🌡️ Temperature
+                    </h5>
+
+                    <span class="text-secondary">
+                        Live telemetry
+                    </span>
+
+                </div>
+
+                <div class="chart-container">
+
+                    <canvas id="tempChart"></canvas>
+
+                </div>
+
+            </div>
+
+
+            <!-- VIBRATION -->
+            <div class="glass-card">
+
+                <div class="d-flex justify-content-between mb-3">
+
+                    <h5 class="fw-bold">
+                        📳 Vibration
+                    </h5>
+
+                    <span class="text-secondary">
+                        Live telemetry
+                    </span>
+
+                </div>
+
+                <div class="chart-container">
+
+                    <canvas id="vibChart"></canvas>
+
+                </div>
+
+            </div>
+
+        </div>
+
+    </div>
+
+</div>
+
+
+<script>
+
+    // =========================================================
+    // GLOBAL VARIABLES
+    // =========================================================
+
+    let tempChart = null;
+    let vibChart = null;
+
+
+    // =========================================================
+    // SHOW ERROR
+    // =========================================================
+
+    function showError(message) {
+
+        const box = document.getElementById("errorBox");
+
+        box.style.display = "block";
+
+        box.innerText = message;
+
+    }
+
+
+    function hideError() {
+
+        document.getElementById("errorBox").style.display = "none";
+
+    }
+
+
+    // =========================================================
+    // CREATE CHARTS
+    // =========================================================
+
+    function createCharts() {
+
+        if (typeof Chart === "undefined") {
+
+            showError(
+                "Chart.js could not be loaded. Check your internet connection."
+            );
+
+            return false;
+        }
+
+
+        const tempCanvas =
+            document.getElementById("tempChart");
+
+        const vibCanvas =
+            document.getElementById("vibChart");
+
+
+        tempChart = new Chart(tempCanvas, {
+
+            type: "line",
+
+            data: {
+
+                labels: [],
+
+                datasets: [
+
+                    {
+                        label: "Temperature °C",
+
+                        data: [],
+
+                        borderColor: "#38bdf8",
+
+                        backgroundColor: "rgba(56,189,248,0.15)",
+
+                        borderWidth: 3,
+
+                        fill: true,
+
+                        tension: 0.4,
+
+                        pointRadius: 3
+                    }
+
+                ]
+            },
+
+            options: {
+
+                responsive: true,
+
+                maintainAspectRatio: false,
+
+                animation: false,
+
+                scales: {
+
+                    y: {
+
+                        title: {
+                            display: true,
+                            text: "Temperature °C"
+                        },
+
+                        grid: {
+                            color: "rgba(148,163,184,0.15)"
+                        },
+
+                        ticks: {
+                            color: "#94a3b8"
+                        }
+                    },
+
+                    x: {
+
+                        grid: {
+                            color: "rgba(148,163,184,0.10)"
+                        },
+
+                        ticks: {
+                            color: "#94a3b8"
+                        }
+                    }
+
+                },
+
+                plugins: {
+
+                    legend: {
+                        labels: {
+                            color: "#e2e8f0"
+                        }
+                    }
+
+                }
+
+            }
+
         });
 
-        const tempChart = new Chart(document.getElementById('tempChart'), chartConfig('#38bdf8'));
-        const vibChart = new Chart(document.getElementById('vibChart'), chartConfig('#a855f7'));
 
-        async function refreshData() {
-            const m_id = document.getElementById('machineSelect').value;
-            if(!m_id) return;
-            const res = await fetch(`/get_data/${m_id}`);
-            const data = await res.json();
-            if(data.length > 0) {
-                const times = data.map(i => i.time);
-                tempChart.data.labels = times; tempChart.data.datasets[0].data = data.map(i => i.temp); tempChart.update('none');
-                vibChart.data.labels = times; vibChart.data.datasets[0].data = data.map(i => i.vib); vibChart.update('none');
-                
-                const latest = data[data.length - 1];
-                document.getElementById('liveTemp').innerText = latest.temp + "°C";
-                document.getElementById('statusBadge').innerHTML = `<span class="badge bg-${latest.status}">${latest.status}</span>`;
+        vibChart = new Chart(vibCanvas, {
+
+            type: "line",
+
+            data: {
+
+                labels: [],
+
+                datasets: [
+
+                    {
+                        label: "Vibration G",
+
+                        data: [],
+
+                        borderColor: "#a855f7",
+
+                        backgroundColor: "rgba(168,85,247,0.15)",
+
+                        borderWidth: 3,
+
+                        fill: true,
+
+                        tension: 0.4,
+
+                        pointRadius: 3
+                    }
+
+                ]
+            },
+
+            options: {
+
+                responsive: true,
+
+                maintainAspectRatio: false,
+
+                animation: false,
+
+                scales: {
+
+                    y: {
+
+                        title: {
+                            display: true,
+                            text: "Vibration G"
+                        },
+
+                        beginAtZero: true,
+
+                        grid: {
+                            color: "rgba(148,163,184,0.15)"
+                        },
+
+                        ticks: {
+                            color: "#94a3b8"
+                        }
+                    },
+
+                    x: {
+
+                        grid: {
+                            color: "rgba(148,163,184,0.10)"
+                        },
+
+                        ticks: {
+                            color: "#94a3b8"
+                        }
+                    }
+
+                },
+
+                plugins: {
+
+                    legend: {
+                        labels: {
+                            color: "#e2e8f0"
+                        }
+                    }
+
+                }
+
             }
+
+        });
+
+
+        return true;
+
+    }
+
+
+    // =========================================================
+    // LOAD MACHINES
+    // =========================================================
+
+    async function loadMachines() {
+
+        try {
+
+            const response =
+                await fetch("/get_machines");
+
+            if (!response.ok) {
+
+                throw new Error(
+                    "Machine API returned " +
+                    response.status
+                );
+
+            }
+
+
+            const machines =
+                await response.json();
+
+
+            const select =
+                document.getElementById("machineSelect");
+
+
+            if (machines.length === 0) {
+
+                select.innerHTML =
+                    '<option value="">No machines found</option>';
+
+                return;
+
+            }
+
+
+            // Remember current selection
+            const current =
+                select.value;
+
+
+            select.innerHTML =
+                machines
+                    .map(machine => `
+                        <option value="${machine}">
+                            ${machine}
+                        </option>
+                    `)
+                    .join("");
+
+
+            // Restore selection
+            if (
+                current &&
+                machines.includes(current)
+            ) {
+
+                select.value = current;
+
+            }
+
+
+            // Automatically select first machine
+            if (!select.value) {
+
+                select.value = machines[0];
+
+            }
+
+
+            // Load immediately
+            await refreshData();
+
+
+        } catch (error) {
+
+            console.error(
+                "Machine loading error:",
+                error
+            );
+
+            showError(
+                "Could not load machines: " +
+                error.message
+            );
+
         }
 
-        async function loadMachines() {
-            const res = await fetch('/get_machines');
-            const machines = await res.json();
-            const select = document.getElementById('machineSelect');
-            if(machines.length > 0 && !select.value) {
-                select.innerHTML = machines.map(m => `<option value="${m}">${m}</option>`).join("");
-            }
+    }
+
+
+    // =========================================================
+    // LOAD MACHINE DATA
+    // =========================================================
+
+    async function refreshData() {
+
+        const machine =
+            document.getElementById(
+                "machineSelect"
+            ).value;
+
+
+        if (!machine) {
+
+            return;
+
         }
 
-        function downloadPDF() { window.location.href = `/export_report/${document.getElementById('machineSelect').value}`; }
 
-        setInterval(() => { loadMachines(); refreshData(); }, 2000);
-    </script>
+        try {
+
+            const response =
+                await fetch(
+                    `/get_data/${encodeURIComponent(machine)}`
+                );
+
+
+            if (!response.ok) {
+
+                throw new Error(
+                    "Data API returned " +
+                    response.status
+                );
+
+            }
+
+
+            const data =
+                await response.json();
+
+
+            if (!data || data.length === 0) {
+
+                document.getElementById(
+                    "liveTemp"
+                ).innerText = "--";
+
+                document.getElementById(
+                    "liveVibration"
+                ).innerText = "--";
+
+                return;
+
+            }
+
+
+            // =================================================
+            // CHART DATA
+            // =================================================
+
+            const times =
+                data.map(item => item.time);
+
+
+            const temperatures =
+                data.map(item => item.temp);
+
+
+            const vibrations =
+                data.map(item => item.vib);
+
+
+            tempChart.data.labels = times;
+
+            tempChart.data.datasets[0].data =
+                temperatures;
+
+            tempChart.update("none");
+
+
+            vibChart.data.labels = times;
+
+            vibChart.data.datasets[0].data =
+                vibrations;
+
+            vibChart.update("none");
+
+
+            // =================================================
+            // LATEST VALUE
+            // =================================================
+
+            const latest =
+                data[data.length - 1];
+
+
+            document.getElementById(
+                "liveTemp"
+            ).innerText =
+                Number(latest.temp).toFixed(1) +
+                "°C";
+
+
+            document.getElementById(
+                "liveVibration"
+            ).innerText =
+                Number(latest.vib).toFixed(2) +
+                " G";
+
+
+            // =================================================
+            // STATUS
+            // =================================================
+
+            const badge =
+                document.getElementById(
+                    "statusBadge"
+                );
+
+
+            badge.innerHTML = `
+                <span class="status-badge status-${latest.status}">
+                    ${latest.status}
+                </span>
+            `;
+
+
+            // =================================================
+            // CONNECTION
+            // =================================================
+
+            document.getElementById(
+                "connectionStatus"
+            ).innerHTML = `
+                <span class="online-dot"></span>
+                Cloud Connected
+            `;
+
+
+            hideError();
+
+        } catch (error) {
+
+            console.error(
+                "Telemetry error:",
+                error
+            );
+
+            document.getElementById(
+                "connectionStatus"
+            ).innerHTML = `
+                <span class="offline-dot"></span>
+                Connection Error
+            `;
+
+            showError(
+                "Could not load telemetry: " +
+                error.message
+            );
+
+        }
+
+    }
+
+
+    // =========================================================
+    // MACHINE CHANGE
+    // =========================================================
+
+    document
+        .getElementById("machineSelect")
+        .addEventListener(
+            "change",
+            refreshData
+        );
+
+
+    // =========================================================
+    // PDF
+    // =========================================================
+
+    function downloadPDF() {
+
+        const machine =
+            document.getElementById(
+                "machineSelect"
+            ).value;
+
+
+        if (!machine) {
+
+            alert(
+                "Please select a machine first."
+            );
+
+            return;
+
+        }
+
+
+        window.location.href =
+            `/export_report/${encodeURIComponent(machine)}`;
+
+    }
+
+
+    // =========================================================
+    // START DASHBOARD
+    // =========================================================
+
+    window.addEventListener(
+        "load",
+        async function () {
+
+            console.log(
+                "🚀 Sentinel Ultra Dashboard started"
+            );
+
+
+            // Create charts first
+            const chartsReady =
+                createCharts();
+
+
+            if (!chartsReady) {
+
+                return;
+
+            }
+
+
+            // Load machines
+            await loadMachines();
+
+
+            // Refresh telemetry every 2 seconds
+            setInterval(
+                refreshData,
+                2000
+            );
+
+
+            // Refresh machine list every 5 seconds
+            setInterval(
+                loadMachines,
+                5000
+            );
+
+        }
+    );
+
+</script>
+
 </body>
 </html>
