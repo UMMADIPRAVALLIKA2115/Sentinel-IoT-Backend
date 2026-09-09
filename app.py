@@ -9,5 +9,5 @@ def login():
             session['logged_in'] = True
             return redirect(url_for('index'))
             
-        if user == "admin" and pw == "hyderabad2026":
+        if user == "pravallika" and pw == "UMMADI":
             # ... keep your existing OTP logic here for your own demo ...
