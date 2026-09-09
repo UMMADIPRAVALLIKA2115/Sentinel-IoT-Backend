@@ -1,8 +1,7 @@
 import requests, time, random
 
 # CHANGE THIS TO YOUR ACTUAL RENDER LINK
-URL = "https://sentinel-iot-backend-xxxx.onrender.com/ingest"
-
+URL = "https://sentinel-iot-backend-12.onrender.com/ingest"
 machines = ["CNC-HYD-001", "LATHE-HYD-002"]
 
 while True:
